@@ -1,10 +1,8 @@
 # Worshipify
 
-**Worshipify** is a music recommendation web app designed to help Christians find worship alternatives to secular music. It uses 
+**Worshipify** is a music recommendation web app designed to help Christians find worship alternatives to secular music.
 
----
-
-## Features
+## Planned Features
 
 - **Secular to Worship Recommendations:**  
   Instantly discover worship music based on audio similarities to your favorite secular songs.
@@ -14,8 +12,6 @@
 
 - **Genre-based Matching:**  
   Specialized to worship, gospel, and Christian sub-genres.
-
----
 
 ## Tech Stack
 - **Backend:** 
