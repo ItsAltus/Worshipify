@@ -1,30 +1,30 @@
-# 🛑 Ignore Virtual Environment
+# Virtual Environment
 venv/
 backend/venv/
 
-# 🛑 Ignore API Keys & Config Files
+# API Keys & Config Files
 .env
 backend/.env
 
-# 🛑 Ignore __pycache__ (Python Compiled Files)
+# __pycache__ (Python Compiled Files)
 __pycache__/
 backend/__pycache__/
 
-# 🛑 Ignore Log & Cache Files
+# Log & Cache Files
 *.log
 *.cache
 
-# 🛑 Ignore IDE & Editor Settings (VS Code, PyCharm, etc.)
+# IDE & Editor Settings (VS Code, PyCharm, etc.)
 .vscode/
 *.code-workspace
 .idea/
 *.iml
 
-# 🛑 Ignore Node.js Dependencies (For Next.js Frontend)
+# Node.js Dependencies (For Next.js Frontend)
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
 
-# 🛑 Ignore Dependency Lock Files (Optional)
+# Dependency Lock Files
 Pipfile
 Pipfile.lock
