@@ -17,16 +17,16 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.13.1'
+        python-version: '3.13'
 
-    - name: Install dependencies
+    - name: Set up virtual environment and install dependencies
       run: |
-        python -m venv venv
-        source venv/bin/activate
+        python -m venv backend/venv
+        source backend/venv/bin/activate
         pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install -r backend/requirements.txt
 
-    - name: Run dependencies test
+    - name: Run dependency test
       run: |
-        source venv/bin/activate
-        python tests/test_dependencies.py
+        source backend/venv/bin/activate
+        python backend/tests/test_dependencies.py
