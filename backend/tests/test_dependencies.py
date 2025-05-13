@@ -8,7 +8,7 @@ class TestRequirements(unittest.TestCase):
     """Test that required packages (and versions) are installed."""
 
     def test_requirements(self):
-        with _REQUIREMENTS_PATH.open(encoding="utf-16") as f:
+        with _REQUIREMENTS_PATH.open() as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#'):

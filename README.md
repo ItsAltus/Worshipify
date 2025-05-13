@@ -1,5 +1,5 @@
 # Worshipify
-![CI](https://github.com/ItsAltus/Worshipify/actions/workflows/test.yml/badge.svg)
+![CI](https://github.com/ItsAltus/Worshipify/actions/workflows/test.yml/badge.svg?branch=main)
 
 **Worshipify** is a music recommendation web app designed to help Christians find worship alternatives to secular music.
 
