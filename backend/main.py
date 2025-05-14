@@ -3,9 +3,11 @@ FastAPI Entry Point
 Contains FastAPI methods and references to external functions
 '''
 
+import os
 from fastapi import FastAPI
 from typing import Optional
 from services.spotify import *
+from services.lastfm import *
 
 TEMP_DIR = "temp"
 TEMP_BASE_FILENAME = "audio"
@@ -32,6 +34,8 @@ def search(song: str, artist: Optional[str] = None):
             danceability=features["danceability"]
         )
         print(f"✅ Status code: {status}")
+
+        tags = get_tags_for_song(secular_song_details["title"], secular_song_details["artist"])
     except Exception as error:
         print("❌ Error:", error)
         return
@@ -46,7 +50,11 @@ def search(song: str, artist: Optional[str] = None):
         except:
             pass
 
-    return features
+    return {
+        "secular_song_info": secular_song_details,
+        "audio_features": features,
+        "tags": tags
+    }
 
 @app.get("/help")
 def docs():
