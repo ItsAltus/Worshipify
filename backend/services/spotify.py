@@ -76,3 +76,8 @@ def extract_features(file_path):
         files = {"audioFile": file}
         result = requests.post(RECCOBEATS_API, files=files)
     return result.status_code, result.json()
+
+def adjust_bpm(bpm, energy, danceability):
+    if bpm < 100 and energy > 0.5 and danceability > 0.5:
+        return round(bpm * 2, 2)
+    return round(bpm, 2)

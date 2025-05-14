@@ -25,6 +25,12 @@ def search(song: str, artist: Optional[str] = None):
     try:
         mp3_path = download_audio(secular_song_details["yt_url"], base_no_ext)
         status, features = extract_features(mp3_path)
+        features["original_tempo"] = features["tempo"]
+        features["tempo"] = adjust_bpm(
+            features["tempo"],
+            energy=features["energy"],
+            danceability=features["danceability"]
+        )
         print(f"✅ Status code: {status}")
     except Exception as error:
         print("❌ Error:", error)
