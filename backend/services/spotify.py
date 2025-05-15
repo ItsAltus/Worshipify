@@ -34,7 +34,7 @@ def search_song(song_name: str, artist_name: str):
     except SpotifyException as error:
         return {"error": f"Spotify search failed: {error}"}
 
-    if results["tracks"]["items"]:
+    if results and results.get("tracks") and results["tracks"].get("items"):
         track = results["tracks"]["items"][0]
         return{
             "title": track["name"],

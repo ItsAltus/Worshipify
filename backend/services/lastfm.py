@@ -6,6 +6,7 @@ import os
 import json
 import re
 import requests
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,7 +46,7 @@ def _load_genre_filter():
 
 ALLOWED_GENRES = _load_genre_filter()
 
-def get_tags_for_song(song_name: str, artist_name: str, mbid: str = None, limit: int = 5):
+def get_tags_for_song(song_name: str, artist_name: str, mbid: Optional[str] = None, limit: int = 5):
     def _call(**kwargs):
         params = {
             "method": "track.gettoptags",

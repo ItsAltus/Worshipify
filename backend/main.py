@@ -21,7 +21,7 @@ def home():
 @app.get("/search") # Visit http://127.0.0.1:8000/search?song_name=your_secular_song_name&artist_name=songs_artist_name (artist optional)
 def search(song: str, artist: Optional[str] = None):
     """Search for a secular song and return its details."""
-    secular_song_details = search_song(song, artist)
+    secular_song_details = search_song(song, artist if artist is not None else "")
     base_no_ext = os.path.join(TEMP_DIR, TEMP_BASE_FILENAME)
 
     try:
