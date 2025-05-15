@@ -4,6 +4,7 @@ song searching and audio feature retrieval
 
 import os
 import requests
+import math
 import yt_dlp
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -81,3 +82,17 @@ def adjust_bpm(bpm, energy, danceability):
     if bpm < 100 and energy > 0.5 and danceability > 0.5:
         return round(bpm * 2, 2)
     return round(bpm, 2)
+
+def normalize_features(f):
+    return {
+        "acousticness": round(f["acousticness"], 2),
+        "danceability": round(f["danceability"], 2),
+        "energy": round(f["energy"], 2),
+        "valence": round(f["valence"], 2),
+        "instrumentalness": math.floor(f["instrumentalness"] * 100) / 100,
+        "speechiness": math.floor(f["speechiness"] * 100) / 100,
+        "liveness": round(f["liveness"], 2),
+        "loudness": round(f["loudness"], 1),
+        "tempo": round(f["tempo"]),
+        "original_tempo":   round(f.get("original_tempo", f["tempo"]))
+    }

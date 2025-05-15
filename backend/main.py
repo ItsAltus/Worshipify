@@ -33,6 +33,7 @@ def search(song: str, artist: Optional[str] = None):
             energy=features["energy"],
             danceability=features["danceability"]
         )
+        features = normalize_features(features)
         print(f"✅ Status code: {status}")
 
         tags = get_tags_for_song(secular_song_details["title"], secular_song_details["artist"])
