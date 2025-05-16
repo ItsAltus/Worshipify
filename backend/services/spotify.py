@@ -39,6 +39,7 @@ def search_song(song_name: str, artist_name: str):
         return{
             "title": track["name"],
             "artist": track["artists"][0]["name"],
+            "album": track["album"]["name"],
             "spotify_url": track["external_urls"]["spotify"],
             "preview_url": track["preview_url"],
             "album_art": track["album"]["images"][0]["url"] if track["album"]["images"] else None,

@@ -151,6 +151,7 @@
 {"url": "?root=rock-and-roll&scope=all", "name": "rock-and-roll"}
 {"url": "?root=ccm&scope=all", "name": "ccm"}
 {"url": "?root=christian%20music&scope=all", "name": "christian music"}
+{"url": "?root=christian%20music&scope=all", "name": "neo-soul"}
 {"url": "?root=memphis%20soul&scope=all", "name": "memphis soul"}
 {"url": "?root=german%20hip%20hop&scope=all", "name": "german hip hop"}
 {"url": "?root=vapor%20soul&scope=all", "name": "vapor soul"}

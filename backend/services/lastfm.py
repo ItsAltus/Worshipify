@@ -6,6 +6,7 @@ import os
 import json
 import re
 import requests
+from services.spotify import search_song
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -44,12 +45,15 @@ def _load_genre_filter():
 
     return genre_filters
 
+def _normalize_genre(name: str):
+    return _nonword_re.sub("", name.lower().strip())
+
 ALLOWED_GENRES = _load_genre_filter()
 
-def get_tags_for_song(song_name: str, artist_name: str, mbid: Optional[str] = None, limit: int = 5):
-    def _call(**kwargs):
+def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
+    def _call(method, **kwargs):
         params = {
-            "method": "track.gettoptags",
+            "method": method,
             "api_key": LASTFM_API_KEY,
             "format": "json",
             "autocorrect": 1,
@@ -60,21 +64,46 @@ def get_tags_for_song(song_name: str, artist_name: str, mbid: Optional[str] = No
         tags = results.json().get("toptags", {}).get("tag", [])
         return tags if isinstance(tags, list) else [tags]
     
-    if mbid:
-        raw_tags = _call(mbid = mbid)
-    else:
-        raw_tags = _call(artist = artist_name, track = song_name)
-    
-    filtered_tags = []
-    for tag in raw_tags:
-        name = tag.get("name", "").lower().strip()
-        if name in ALLOWED_GENRES:
-            filtered_tags.append({
-                "name": name,
-                "count": int(tag.get("count", 0)),
-                "url": tag.get("url", "")
-            })
-        if len(filtered_tags) >= limit:
-            break
+    attempts = [
+        ("track.gettoptags", {"artist": artist_name, "track": song_name}),
+        ("track.getTags", {"artist": artist_name, "track": song_name}),
+        ("album.gettoptags", {"artist": artist_name, "album": song_name}),
+        ("artist.gettoptags", {"artist": artist_name}),
+    ]
 
-    return filtered_tags
+    seen = set()
+    filtered_tags = []
+    raw_tags = []
+    source = None
+    DISSALLOWED_TAGS = {"usa", "american", "seen live", "french", "german", artist_name.lower()}
+
+    for method, kwargs in attempts:
+        try:
+            raw_tags = _call(method, **kwargs) 
+
+            for tag in raw_tags:
+                name = tag.get("name", "").lower().strip()
+                norm = _normalize_genre(name)
+
+                if (norm in seen or name in DISSALLOWED_TAGS or artist_name.lower() in name):
+                    continue
+
+                if (name in ALLOWED_GENRES or norm in ALLOWED_GENRES or any(word in ALLOWED_GENRES for word in _word_re.findall(name))):
+                    filtered_tags.append({
+                        "name": name,
+                        "count": int(tag.get("count", 0)),
+                        "url": tag.get("url", "")
+                    })
+                    seen.add(norm)
+
+                if len(filtered_tags) >= limit:
+                    break
+
+            if filtered_tags:
+                source = method
+                break
+
+        except Exception:
+            continue
+
+    return filtered_tags, source
