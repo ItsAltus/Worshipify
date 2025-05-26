@@ -6,7 +6,7 @@ import glob
 import math
 import os
 import subprocess
-from typing import List, Tuple
+from typing import List
 import requests
 import spotipy
 import yt_dlp
@@ -129,7 +129,7 @@ def merge_segments(s1: dict, s2: dict) -> dict:
            for k in s1 if isinstance(s1[k], (int, float))}
 
     bpm = _select_tempo(s1, s2)
-    avg["tempo"] = avg["original_tempo"] = bpm
+    avg["tempo"] = bpm
     return avg
 
 def normalize_features(f):
@@ -143,5 +143,5 @@ def normalize_features(f):
         "liveness": round(f["liveness"], 2),
         "loudness": round(f["loudness"], 1),
         "tempo": round(f["tempo"]),
-        "original_tempo": round(f.get("original_tempo", f["tempo"]))
+        "original_tempo": f["tempo"]
     }

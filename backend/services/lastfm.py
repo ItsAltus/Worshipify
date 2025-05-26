@@ -6,14 +6,13 @@ import os
 import json
 import re
 import requests
-from services.spotify import search_song
-from typing import Optional
+from services.spotify import *
 from dotenv import load_dotenv
 
 load_dotenv()
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
 BASE_URL = "http://ws.audioscrobbler.com/2.0/"
-GENRES_FILE = os.path.abspath(os.path.join(__file__, "..", "..", "genres.txt"))
+GENRES_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "genres.txt")
 
 _nonword_re = re.compile(r"[^\w]+")
 _word_re    = re.compile(r"\w+")
