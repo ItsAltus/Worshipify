@@ -5,7 +5,7 @@ Contains FastAPI methods and references to external functions
 
 import os
 from fastapi import FastAPI
-from typing import Optional
+from typing import Optional, Dict
 from services.spotify import *
 from services.lastfm import *
 
@@ -18,44 +18,47 @@ app = FastAPI()
 def home():
     return {"message": "Worshipify Backend is Running!"}
 
-@app.get("/search") # Visit http://127.0.0.1:8000/search?song_name=your_secular_song_name&artist_name=songs_artist_name (artist optional)
-def search(song: str, artist: Optional[str] = None):
-    """Search for a secular song and return its details."""
-    secular_song_details = search_song(song, artist if artist is not None else "")
-    base_no_ext = os.path.join(TEMP_DIR, TEMP_BASE_FILENAME)
+def _process_single(song: str, artist: str, idx: int) -> Dict:
+    details = search_song(song, artist)
+    base_no_ext = os.path.join(TEMP_DIR, f"{TEMP_BASE_FILENAME}_{idx}")
 
-    try:
-        mp3_path = download_audio(secular_song_details["yt_url"], base_no_ext)
-        status, features = extract_features(mp3_path)
-        features["original_tempo"] = features["tempo"]
-        features["tempo"] = adjust_bpm(
-            features["tempo"],
-            energy=features["energy"],
-            danceability=features["danceability"]
-        )
-        features = normalize_features(features)
-        print(f"✅ Status code: {status}")
+    paths = download_audio(details["yt_url"], base_no_ext)
 
-        tags = get_tags_for_song(secular_song_details["title"], secular_song_details["artist"])
-    except Exception as error:
-        print("❌ Error:", error)
-        return
-    finally:
-        for file_name in os.listdir(TEMP_DIR) if os.path.isdir(TEMP_DIR) else []:
-            try:
-                os.remove(os.path.join(TEMP_DIR, file_name))
-            except:
-                pass
-        try:
-            os.rmdir(TEMP_DIR)
-        except:
-            pass
+    feature_results = extract_features(paths)
+    segment_labels = ["0-30s", "30-60s"]
+    segments = []
+    for i, (_, _, feats) in enumerate(feature_results):
+        feats["segment"] = segment_labels[i]
+        segments.append(normalize_features(feats))
+
+    avg = merge_segments(segments[0], segments[1])
+
+    tags = get_tags_for_song(details["title"], details["artist"])
 
     return {
-        "secular_song_info": secular_song_details,
-        "audio_features": features,
-        "tags": tags
+        "secular_song_info": details,
+        "audio_features": {"average": avg, "segments": segments},
+        "tags": tags,
     }
+
+@app.get("/search") # Visit http://127.0.0.1:8000/search?song_name=your_secular_song_name&artist_name=songs_artist_name (artist optional)
+def search(song: str, artist: Optional[str] = None):
+    os.makedirs(TEMP_DIR, exist_ok=True)
+
+    try:
+        result = _process_single(song, artist or "", idx=0)
+    except Exception as err:
+        print("❌ Error:", err)
+        return {"error": str(err)}
+    finally:
+        try:
+            for fn in os.listdir(TEMP_DIR):
+                os.remove(os.path.join(TEMP_DIR, fn))
+            os.rmdir(TEMP_DIR)
+        except Exception:
+            pass
+
+    return result
 
 @app.get("/help")
 def docs():

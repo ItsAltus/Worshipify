@@ -74,7 +74,6 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
     seen = set()
     filtered_tags = []
     raw_tags = []
-    source = None
     DISSALLOWED_TAGS = {"usa", "american", "seen live", "french", "german", artist_name.lower()}
 
     for method, kwargs in attempts:
@@ -100,10 +99,9 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
                     break
 
             if filtered_tags:
-                source = method
                 break
 
         except Exception:
             continue
 
-    return filtered_tags, source
+    return filtered_tags
