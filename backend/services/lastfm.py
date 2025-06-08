@@ -74,10 +74,15 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
     filtered_tags = []
     raw_tags = []
     DISSALLOWED_TAGS = {"usa", "american", "seen live", "french", "german", artist_name.lower()}
+    sources = []
 
     for method, kwargs in attempts:
         try:
-            raw_tags = _call(method, **kwargs) 
+            raw_tags = _call(method, **kwargs)
+
+            if len(raw_tags) < 5:
+                sources.append(f"Method {method} returned {len(raw_tags)} raw tags, therefore not used")
+                continue
 
             for tag in raw_tags:
                 name = tag.get("name", "").lower().strip()
@@ -98,9 +103,10 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
                     break
 
             if filtered_tags:
+                sources.append(f"Method {method} returned {len(raw_tags)} raw tags, therefore was used")
                 break
 
         except Exception:
             continue
 
-    return filtered_tags
+    return filtered_tags, sources
