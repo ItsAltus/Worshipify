@@ -18,6 +18,7 @@ _nonword_re = re.compile(r"[^\w]+")
 _word_re    = re.compile(r"\w+")
 
 def _load_genre_filter():
+    """Load allowed genre keywords from ``genres.txt``."""
     genre_filters = set()
     with open(GENRES_FILE, "r", encoding = "utf-8") as txt:
         for line in txt:
@@ -45,11 +46,13 @@ def _load_genre_filter():
     return genre_filters
 
 def _normalize_genre(name: str):
+    """Normalize a genre string for comparison."""
     return _nonword_re.sub("", name.lower().strip())
 
 ALLOWED_GENRES = _load_genre_filter()
 
 def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
+    """Return a filtered list of tags from Last.fm for a given song."""
     def _call(method, **kwargs):
         params = {
             "method": method,
