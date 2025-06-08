@@ -118,10 +118,22 @@ def _normalise_bpm(bpm: float) -> float:
     return round(bpm)
 
 def _select_tempo(s1: dict, s2: dict) -> int:
-    """Pick the most suitable tempo from two feature dictionaries."""
-    if abs(s1["tempo"] - s2["tempo"]) < 10:
-        return round((s1["tempo"] + s2["tempo"]) / 2)
-    return s1["tempo"] if abs(s1["tempo"] - s2["tempo"]) < abs(s2["tempo"] - s1["tempo"]) else s2["tempo"]
+    """Pick a sensible tempo from two feature dictionaries."""
+    t1, t2 = s1["tempo"], s2["tempo"]
+    e1, e2 = s1.get("energy", 0.5), s2.get("energy", 0.5)
+
+    # If the tempos are similar, return an energy weighted average
+    if abs(t1 - t2) <= 10:
+        weighted = (t1 * e1 + t2 * e2) / (e1 + e2 or 1e-6)
+        return round(weighted)
+
+    # Otherwise pick the tempo closest to a common reference (120 BPM)
+    ref = 120
+    d1, d2 = abs(t1 - ref), abs(t2 - ref)
+    if d1 == d2:
+        # tie-breaker based on higher energy
+        return round(t1 if e1 >= e2 else t2)
+    return round(t1 if d1 < d2 else t2)
 
 def merge_segments(s1: dict, s2: dict) -> dict:
     """Weighted merge of two feature dictionaries."""
