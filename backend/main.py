@@ -16,9 +16,11 @@ app = FastAPI()
 
 @app.get("/")
 def home():
+    """Health check endpoint returning a basic running message."""
     return {"message": "Worshipify Backend is Running!"}
 
 def _process_single(song: str, artist: str, idx: int) -> Dict:
+    """Process a single song through search, download and tagging pipeline."""
     details = search_song(song, artist)
     base_no_ext = os.path.join(TEMP_DIR, f"{TEMP_BASE_FILENAME}_{idx}")
 
@@ -43,6 +45,7 @@ def _process_single(song: str, artist: str, idx: int) -> Dict:
 
 @app.get("/search") # Visit http://127.0.0.1:8000/search?song_name=your_secular_song_name&artist_name=songs_artist_name (artist optional)
 def search(song: str, artist: Optional[str] = None):
+    """Public endpoint for analysing a song and returning metadata."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     try:
@@ -62,4 +65,5 @@ def search(song: str, artist: Optional[str] = None):
 
 @app.get("/help")
 def docs():
+    """Simple helper pointing users to the automatic API docs."""
     return {"message": "Visit /docs for API documentation."}

@@ -25,6 +25,7 @@ TEMP_DIR = "temp"
 RECCOBEATS_API = "https://api.reccobeats.com/v1/analysis/audio-features"
 
 def search_song(song_name: str, artist_name: str):
+    """Return metadata for the best matching Spotify track."""
     query = f'track:"{song_name}"'
     if artist_name:
         query += f' artist:"{artist_name}"'
@@ -50,6 +51,7 @@ def search_song(song_name: str, artist_name: str):
     return {"error": "Song not found"}
 
 def _ffmpeg_trim(src: str, start: int, dur: int, dst: str) -> None:
+    """Trim ``dur`` seconds from ``src`` starting at ``start`` using ffmpeg."""
     subprocess.run(
         [
             "ffmpeg",
@@ -63,6 +65,7 @@ def _ffmpeg_trim(src: str, start: int, dur: int, dst: str) -> None:
     )
 
 def download_audio(youtube_url: str, base_path_no_ext: str) -> List[str]:
+    """Download a 60s preview from YouTube and split it into two clips."""
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     base60 = f"{base_path_no_ext}_60s"
@@ -94,6 +97,7 @@ def download_audio(youtube_url: str, base_path_no_ext: str) -> List[str]:
     return out_paths
 
 def extract_features(paths: List[str]):
+    """Send audio clips to ReccoBeats and return the JSON responses."""
     results = []
     for fp in paths:
         with open(fp, "rb") as f:
@@ -102,6 +106,7 @@ def extract_features(paths: List[str]):
     return results
 
 def _normalise_bpm(bpm: float) -> float:
+    """Normalize BPM into a human-friendly range."""
     if bpm == 0:
         return 0.0
 
@@ -113,11 +118,13 @@ def _normalise_bpm(bpm: float) -> float:
     return round(bpm)
 
 def _select_tempo(s1: dict, s2: dict) -> int:
+    """Pick the most suitable tempo from two feature dictionaries."""
     if abs(s1["tempo"] - s2["tempo"]) < 10:
         return round((s1["tempo"] + s2["tempo"]) / 2)
     return s1["tempo"] if abs(s1["tempo"] - s2["tempo"]) < abs(s2["tempo"] - s1["tempo"]) else s2["tempo"]
 
 def merge_segments(s1: dict, s2: dict) -> dict:
+    """Weighted merge of two feature dictionaries."""
     for seg in (s1, s2):
         seg["tempo"] = _normalise_bpm(seg["tempo"])
         if seg["energy"] > 0.5 and seg["instrumentalness"] < 0.1:
@@ -133,6 +140,7 @@ def merge_segments(s1: dict, s2: dict) -> dict:
     return avg
 
 def normalize_features(f):
+    """Round and clean up raw feature data returned by ReccoBeats."""
     return {
         "acousticness": round(f["acousticness"], 2),
         "danceability": round(f["danceability"], 2),
