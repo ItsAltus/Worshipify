@@ -1,3 +1,3 @@
 '''
-contains the audo similarity algorithms and song matching logic
+contains the audio similarity algorithms and song matching logic
 '''
