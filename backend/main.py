@@ -26,14 +26,9 @@ def _process_single(song: str, artist: str, idx: int) -> Dict:
 
     paths = download_audio(details["yt_url"], base_no_ext)
 
-    feature_results = extract_features(paths)
-    segment_labels = ["0-30s", "30-60s"]
-    segments = []
-    for i, (_, _, feats) in enumerate(feature_results):
-        feats["segment"] = segment_labels[i]
-        segments.append(normalize_features(feats))
-
-    avg = merge_segments(segments[0], segments[1])
+    raw_feature_dicts = extract_features(paths)
+    segments = [normalize_features(feats) for feats in raw_feature_dicts]
+    avg = merge_segments(segments)
 
     tags = get_tags_for_song(details["title"], details["artist"])
 

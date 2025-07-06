@@ -6,13 +6,16 @@ import glob
 import math
 import os
 import subprocess
-from typing import List
+import logging
+from typing import List, Dict
 import requests
 import spotipy
 import yt_dlp
 from dotenv import load_dotenv
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyClientCredentials
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -64,46 +67,88 @@ def _ffmpeg_trim(src: str, start: int, dur: int, dst: str) -> None:
         check=True,
     )
 
+def _get_duration(src: str) -> float:
+    """Return duration of audio file in seconds using ffprobe."""
+    out = subprocess.check_output([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        src
+    ])
+    return float(out.strip())
+
 def download_audio(youtube_url: str, base_path_no_ext: str) -> List[str]:
-    """Download a 60s preview from YouTube and split it into two clips."""
+    """Download full audio from YouTube and split into 30s clips—dropping
+    first/last if there are 4+ clips to save ffmpeg calls."""
     os.makedirs(TEMP_DIR, exist_ok=True)
+    base = f"{base_path_no_ext}"
+    outtmpl = base + ".%(ext)s"
 
-    base60 = f"{base_path_no_ext}_60s"
-    outtmpl = base60 + ".%(ext)s"
-
-    if not glob.glob(base60 + ".*"):
+    if not glob.glob(base + ".*"):
         yt_dlp.YoutubeDL(
             {
                 "format": "bestaudio/best",
                 "outtmpl": outtmpl,
-                "download_sections": ["*00:00:00-00:01:00"],
                 "nopart": True,
                 "quiet": False,
             }
         ).download([youtube_url])
 
-    matches = glob.glob(base60 + ".*")
+    matches = glob.glob(base + ".*")
     if not matches:
-        raise FileNotFoundError("60-second clip was not downloaded")
-    raw60 = matches[0]
+        raise FileNotFoundError("clip was not downloaded")
+    raw = matches[0]
+
+    total_secs = _get_duration(raw)
+    num_clips  = int((total_secs + 29) // 30)
+
+    if num_clips >= 4:
+        clip_indices = range(1, num_clips-1)
+    else:
+        clip_indices = range(num_clips)
 
     out_paths: List[str] = []
-    for start in (0, 30):
-        mp3 = f"{base_path_no_ext}_from{start}s.mp3"
+    for idx in clip_indices:
+        start = idx * 30
+        duration = min(30, total_secs - start)
+        mp3 = f"{base_path_no_ext}_clip{idx:02d}.mp3"
         if not os.path.exists(mp3):
-            _ffmpeg_trim(raw60, start, 30, mp3)
+            _ffmpeg_trim(raw, start, int(duration), mp3)
         out_paths.append(mp3)
 
     return out_paths
 
 def extract_features(paths: List[str]):
     """Send audio clips to ReccoBeats and return the JSON responses."""
-    results = []
+    features: List[Dict] = []
+    EXPECTED_KEYS = {
+        "acousticness","danceability","energy",
+        "instrumentalness","speechiness","liveness",
+        "loudness","tempo","valence"
+    }
+
     for fp in paths:
-        with open(fp, "rb") as f:
-            r = requests.post(RECCOBEATS_API, files={"audioFile": f})
-            results.append((fp, r.status_code, r.json()))
-    return results
+        try:
+            with open(fp, "rb") as f:
+                r = requests.post(RECCOBEATS_API, files={"audioFile": f}, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+
+            if "audio_features" in data and isinstance(data["audio_features"], dict):
+                data = data["audio_features"]
+
+            if not EXPECTED_KEYS.issubset(data.keys()):
+                raise ValueError(f"Missing keys: got {list(data.keys())}")
+
+            features.append(data)
+
+        except Exception as e:
+            logger.warning(f"Skipping clip {fp!r}: {e}")
+
+    if not features:
+        raise RuntimeError("All ReccoBeats calls failed; no valid feature data")
+
+    return features
 
 def _normalise_bpm(bpm: float) -> float:
     """Normalize BPM into a human-friendly range."""
@@ -117,38 +162,44 @@ def _normalise_bpm(bpm: float) -> float:
 
     return round(bpm)
 
-def _select_tempo(s1: dict, s2: dict) -> int:
-    """Pick a sensible tempo from two feature dictionaries."""
-    t1, t2 = s1["tempo"], s2["tempo"]
-    e1, e2 = s1.get("energy", 0.5), s2.get("energy", 0.5)
+def _select_tempo(segments: List[Dict], threshold: float = 10.0, ref: float = 120.0) -> int:
+    """
+    Pick a tempo by taking the energy-weighted average of every segment's BPM.
+    This ensures that high-energy, high-tempo slices pull the result upward,
+    closely matching the track's actual tempo.
+    """
+    tempos = [_normalise_bpm(seg["tempo"]) for seg in segments]
+    energies = [seg.get("energy", 0.5)    for seg in segments]
 
-    # If the tempos are similar, return an energy weighted average
-    if abs(t1 - t2) <= 10:
-        weighted = (t1 * e1 + t2 * e2) / (e1 + e2 or 1e-6)
-        return round(weighted)
+    total_energy = sum(energies) or 1e-6
+    weighted_sum = sum(t * e for t, e in zip(tempos, energies))
 
-    # Otherwise pick the tempo closest to a common reference (120 BPM)
-    ref = 120
-    d1, d2 = abs(t1 - ref), abs(t2 - ref)
-    if d1 == d2:
-        # tie-breaker based on higher energy
-        return round(t1 if e1 >= e2 else t2)
-    return round(t1 if d1 < d2 else t2)
+    return round(weighted_sum / total_energy)
 
-def merge_segments(s1: dict, s2: dict) -> dict:
-    """Weighted merge of two feature dictionaries."""
-    for seg in (s1, s2):
+def merge_segments(segments: List[Dict]) -> dict:
+    """
+    Merge N feature-dicts into a single averaged dict.
+        - First normalize BPM and clamp acousticness on each segment.
+        - Then compute an energy-weighted average for every numeric feature.
+        - Finally, pick a representative “tempo” via _select_tempo().
+    """
+    for seg in segments:
         seg["tempo"] = _normalise_bpm(seg["tempo"])
         if seg["energy"] > 0.5 and seg["instrumentalness"] < 0.1:
             seg["acousticness"] = min(seg["acousticness"], 0.3)
 
-    w1, w2 = s1["energy"], s2["energy"]
-    total = w1 + w2 or 1e-6
-    avg = {k: round((s1[k]*w1 + s2[k]*w2)/total, 2)
-           for k in s1 if isinstance(s1[k], (int, float))}
+    energies = [seg["energy"] for seg in segments]
+    total_energy = sum(energies) or 1e-6
 
-    bpm = _select_tempo(s1, s2)
-    avg["tempo"] = bpm
+    avg: Dict[str, float] = {}
+    numeric_keys = [k for k, v in segments[0].items() if isinstance(v, (int, float))]
+
+    for key in numeric_keys:
+        weighted_sum = sum(seg[key] * seg["energy"] for seg in segments)
+        avg[key] = round(weighted_sum / total_energy, 2)
+
+    avg["tempo"] = _select_tempo(segments)
+
     return avg
 
 def normalize_features(f):
@@ -163,5 +214,4 @@ def normalize_features(f):
         "liveness": round(f["liveness"], 2),
         "loudness": round(f["loudness"], 1),
         "tempo": round(f["tempo"]),
-        "original_tempo": f["tempo"]
     }
