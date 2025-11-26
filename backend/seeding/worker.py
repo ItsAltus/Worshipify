@@ -2,43 +2,10 @@
 Script to populate the database
 """
 
-import os
 import time
+from db_helpers import connect_to_db, test_db_connection
 from typing import Optional
-from pathlib import Path
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
-
-# Load environment variables from ../.env
-env_path = Path(__file__).resolve().parent.parent / ".env"
-load_dotenv(env_path)
-
-# Get DB URL
-db_url = os.getenv("DATABASE_URL")
-if not db_url:
-    raise RuntimeError("DATABASE_URL is missing or .env failed to load")
-
-# Create normal SQLAlchemy engine (sync)
-engine = create_engine(
-    db_url,
-    echo = False, # Print SQL queries
-    pool_pre_ping = True # Avoid stale connections
-)
-
-def test_db_connection():
-    """
-    Test the database connection on startup.
-    Exits the program if connection fails.
-    """
-    try:
-        with engine.connect() as test_connection:
-            result = test_connection.execute(text("SELECT version()"))
-            version = result.scalar()
-        print(f"Connected to Worshipify database with version: {version}")
-
-    except Exception as error:
-        print(f"Failed to connect to the database: {error}")
-        exit(1) # Don't proceed if DB connection fails
+from sqlalchemy import text
 
 def fetch_next_job(db) -> Optional[dict]:
     """
@@ -133,7 +100,11 @@ def main():
     Sleeps when no jobs are available.
     Exits by keyboard interrupt.
     """
-    test_db_connection()
+    # Create DB engine
+    engine = connect_to_db()
+
+    # Test DB connection
+    test_db_connection(engine)
 
     try:
         while True:
