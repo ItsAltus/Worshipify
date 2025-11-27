@@ -7,6 +7,12 @@ from db_helpers import connect_to_db, test_db_connection
 from typing import Optional
 from sqlalchemy import text
 
+def check_for_manager_ping(db):
+    """
+    Receives pings from the manager to confirm it's alive.
+    """
+    pass
+
 def fetch_next_job(db) -> Optional[dict]:
     """
     Fetch the next job from the populate_queue table.

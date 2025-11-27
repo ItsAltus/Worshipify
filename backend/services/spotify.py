@@ -53,6 +53,14 @@ def search_song(song_name: str, artist_name: str):
         }
     return {"error": "Song not found"}
 
+def validate_spotify_track(spotify_track_id: str) -> bool:
+    """Check if a Spotify track ID is valid."""
+    try:
+        track = sp.track(spotify_track_id)
+        return track is not None
+    except SpotifyException:
+        return False    
+
 def _ffmpeg_trim(src: str, start: int, dur: int, dst: str) -> None:
     """Trim ``dur`` seconds from ``src`` starting at ``start`` using ffmpeg."""
     subprocess.run(
