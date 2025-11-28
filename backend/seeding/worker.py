@@ -12,6 +12,7 @@ def fetch_next_job(db) -> Optional[dict]:
     Fetch the next job from the populate_queue table.
     Locks the row to prevent other workers from processing it.
     Returns a dictionary with job details or None if no pending jobs.
+    If the worker is interrupted, the transaction is rolled back.
     """
     row = db.execute(text("""
         SELECT id,

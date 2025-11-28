@@ -8,12 +8,12 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
-import os
 import time
 from db_helpers import connect_to_db, test_db_connection
 from services.spotify import validate_spotify_track
 from typing import Optional
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 add_song_inputs = ["1", "1.", "add", "add song", "add song to queue", "a"]
 view_queue_inputs = ["2", "2.", "view", "view queue", "v"]
@@ -34,12 +34,17 @@ def add_song_to_queue(engine, spotify_track_id: str):
     """
     Adds a song to the population queue.
     """
-    with engine.begin() as db:
-        db.execute(text("""
-            INSERT INTO populate_queue (spotify_track_id, source)
-            VALUES (:spotify_track_id, 'manual')
-        """), {"spotify_track_id": spotify_track_id})
-    print(f"[manager] Added track {spotify_track_id} to the queue.\n")
+    try:
+        with engine.begin() as db:
+            db.execute(text("""
+                INSERT INTO populate_queue (spotify_track_id, source)
+                VALUES (:spotify_track_id, 'manual')
+            """), {"spotify_track_id": spotify_track_id})
+        print(f"[manager] Added track {spotify_track_id} to the queue.\n")
+    except IntegrityError:
+        print(f"[manager] Failed to add track to the queue: Track already exists in the queue.\n")
+    except Exception as error:
+        print(f"[manager] Failed to add track to the queue: {error}\n")
 
 def view_queue(engine):
     """
@@ -49,9 +54,9 @@ def view_queue(engine):
         result = db.execute(text("""
             SELECT id, spotify_track_id, source, enqueued_at, status, attempt_count, last_attempt_at, last_error
             FROM populate_queue
-            ORDER BY enqueued_at DESC
+            ORDER BY enqueued_at ASC
         """))
-        rows = result.fetchall()
+        rows = result.mappings().all()
         print("[manager] Current Population Queue:")
         print("-----------------------------------")
         if len(rows) == 0:
