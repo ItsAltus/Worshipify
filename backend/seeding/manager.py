@@ -56,13 +56,38 @@ def view_queue(engine):
             FROM populate_queue
             ORDER BY enqueued_at ASC
         """))
+
         rows = result.mappings().all()
+        if len(rows) == 0:
+            print("[manager] Population queue is empty.\n")
+
+        print("[manager] Choose a status to filter by:")
+        print("   1. pending")
+        print("   2. in_progress")
+        print("   3. completed")
+        print("   4. failed")
+        print("   5. all records\n")
+
+        status_choice = input("[manager] Enter your choice (or press Enter for all): ")
+        print("")
+
+        if status_choice == "1":
+            rows = [row for row in rows if row["status"] == "pending"]
+        elif status_choice == "2":
+            rows = [row for row in rows if row["status"] == "in_progress"]
+        elif status_choice == "3":
+            rows = [row for row in rows if row["status"] == "completed"]
+        elif status_choice == "4":
+            rows = [row for row in rows if row["status"] == "failed"]
+        elif status_choice == "5" or status_choice == "":
+            pass
+        else:
+            print("[manager] Invalid choice, showing all records.\n")
+    
         print("[manager] Current Population Queue:")
         print("-----------------------------------")
-        if len(rows) == 0:
-            print("  (empty)")
         for row in rows:
-            print(f"  ID: {row['id']}, Track ID: {row['spotify_track_id']}, Source: {row['source']}, Enqueued At: {row['enqueued_at']}, Status: {row['status']}, Attempts: {row['attempt_count']}, Last Attempt At: {row['last_attempt_at']}, Last Error: {row['last_error']}")
+            print(f"  ID: {row['id']}, Track ID: {row['spotify_track_id']}, Status: {row['status']}, Source: {row['source']}, Enqueued At: {row['enqueued_at']}, Attempts: {row['attempt_count']}, Last Attempt At: {row['last_attempt_at']}, Last Error: {row['last_error']}")
         print("")
 
 def main():
