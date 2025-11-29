@@ -57,7 +57,7 @@ def _normalize_genre(name: str):
 
 def _apply_christian_tag_filter(tags: list):
     """Filter tags to only include Christian-related ones."""
-    christian_keywords = {"christian", "ccm", "worship", "gospel", "chh"}
+    christian_keywords = {"christian", "ccm", "worship", "gospel", "chh", "jesus", "bible", "christ"}
     filtered = []
     for tag in tags:
         name = tag.get("name", "").lower().strip()

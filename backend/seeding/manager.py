@@ -60,6 +60,7 @@ def view_queue(engine):
         rows = result.mappings().all()
         if len(rows) == 0:
             print("[manager] Population queue is empty.\n")
+            return
 
         print("[manager] Choose a status to filter by:")
         print("   1. pending")
@@ -76,7 +77,7 @@ def view_queue(engine):
         elif status_choice == "2":
             rows = [row for row in rows if row["status"] == "in_progress"]
         elif status_choice == "3":
-            rows = [row for row in rows if row["status"] == "completed"]
+            rows = [row for row in rows if row["status"] == "done"]
         elif status_choice == "4":
             rows = [row for row in rows if row["status"] == "failed"]
         elif status_choice == "5" or status_choice == "":

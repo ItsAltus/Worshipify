@@ -173,6 +173,24 @@ def process_next_job(db):
             "last_indexed": None
         })
 
+        # Insert the tags into the song_tags table
+        if tags:
+            tag_rows = [
+                {
+                    "track_id": song_info["track_id"],
+                    "tag": tag["name"].strip().lower(),
+                    "count": tag["count"],
+                }
+                for tag in tags
+            ]
+
+            for tag_row in tag_rows:
+                db.execute(text("""
+                    INSERT INTO song_tags (track_id, tag, count)
+                    VALUES (:track_id, :tag, :count)
+                    ON CONFLICT (track_id, tag) DO NOTHING
+                """), tag_row)
+
         # On success, mark job as completed
         db.execute(text("""
             UPDATE populate_queue
