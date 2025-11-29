@@ -19,9 +19,11 @@ def home():
     """Health check endpoint returning a basic running message."""
     return {"message": "Worshipify Backend is Running!"}
 
-def _process_single(song: str, artist: str, idx: int) -> Dict:
+def process_single(song: str, artist: str, idx: int) -> Dict:
     """Process a single song through search, download and tagging pipeline."""
     details = search_song(song, artist)
+    if details is None:
+        raise ValueError(f"Could not find song: {song} by {artist}")
     base_no_ext = os.path.join(TEMP_DIR, f"{TEMP_BASE_FILENAME}_{idx}")
 
     paths = download_audio(details["yt_url"], base_no_ext)
@@ -34,7 +36,7 @@ def _process_single(song: str, artist: str, idx: int) -> Dict:
 
     return {
         "secular_song_info": details,
-        "audio_features": {"average": avg, "segments": segments},
+        "audio_features": {"raw": raw_feature_dicts, "average": avg, "segments": segments},
         "tags": tags,
     }
 
@@ -44,7 +46,7 @@ def search(song: str, artist: Optional[str] = None):
     os.makedirs(TEMP_DIR, exist_ok=True)
 
     try:
-        result = _process_single(song, artist or "", idx=0)
+        result = process_single(song, artist or "", idx=0)
     except Exception as err:
         print("❌ Error:", err)
         return {"error": str(err)}

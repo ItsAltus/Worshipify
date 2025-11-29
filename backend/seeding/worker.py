@@ -2,10 +2,36 @@
 Script to populate the database
 """
 
+import os
+import sys
+from pathlib import Path
+
+backend_path = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_path))
+
 import time
-from db_helpers import connect_to_db, test_db_connection
+from db_helpers import *
+from services.lastfm import is_song_christian
+from services.spotify import features_to_vector
+from main import process_single
 from typing import Optional
 from sqlalchemy import text
+
+TEMP_DIR = "temp"
+TEMP_BASE_FILENAME = "audio"
+
+def _fail_job(db, job_id: int, error_message: str):
+    """
+    Mark a job as failed in the populate_queue table.
+    """
+    db.execute(text("""
+        UPDATE populate_queue
+        SET status = 'failed',
+            last_error = :error,
+            last_attempt_at = NOW(),
+            attempt_count = attempt_count + 1
+        WHERE id = :id
+    """), {"id": job_id, "error": error_message})
 
 def fetch_next_job(db) -> Optional[dict]:
     """
@@ -60,17 +86,92 @@ def process_next_job(db):
     """), {"id": job["id"]})
 
     try:
-        #
-        ##
-        ###
-        #TODO: Add actual processing logic here
-        ###
-        ##
-        #
-
         print(f"[worker] Processing track {job['spotify_track_id']}...")
 
-        time.sleep(3)
+        # Check if the song is actually Christian
+        result = is_song_christian(job["spotify_track_id"])
+        is_christian, tags, method, isrc, song_info = result
+        
+        # If not Christian, mark job as failed
+        if not is_christian:
+            print(f"[worker] Track {job['spotify_track_id']} determined to be non-Christian. Marking job as failed.")
+            _fail_job(db, job["id"], "Track determined to be non-Christian")
+            return True
+        
+        # If song_info could not be retrieved, mark job as failed
+        if song_info is None:
+            print(f"[worker] Failed to retrieve song info for track {job['spotify_track_id']}. Marking job as failed.")
+            _fail_job(db, job["id"], "Failed to retrieve song info from Spotify")
+            return True
+
+        # If song already exists in DB, mark job as failed
+        existing_song = db.execute(text("""
+            SELECT isrc
+            FROM christian_songs
+            WHERE isrc = :isrc
+        """), {"isrc": isrc}).fetchone()
+
+        if existing_song is not None:
+            print(f"[worker] Track {job['spotify_track_id']} already exists in the database with ISRC {existing_song.isrc}. Skipping job.")
+            _fail_job(db, job["id"], "Track already exists in the database")
+            return True
+        
+        # Insert the new Christian song into the database
+        try:
+            song_data = process_single(song_info["title"], song_info["artist"], idx=job["id"])
+        except Exception as err:
+            _fail_job(db, job["id"], str(err))
+            return True
+        finally:
+            try:
+                for fn in os.listdir(TEMP_DIR):
+                    os.remove(os.path.join(TEMP_DIR, fn))
+                os.rmdir(TEMP_DIR)
+            except Exception:
+                pass
+        
+        audio_features = song_data["audio_features"]["average"]
+        weighted_features = weight_features(audio_features)
+
+        db.execute(text("""
+            INSERT INTO christian_songs (
+                track_id,
+                isrc,
+                title,
+                artist,
+                album,
+                tag_count,
+                tags_method,
+                audio_features,
+                weighted_features,
+                num_indexes,
+                last_indexed
+            ) VALUES (
+                :track_id,
+                :isrc,
+                :title,
+                :artist,
+                :album,
+                :tag_count,
+                :tags_method,
+                :audio_features,
+                :weighted_features,
+                :num_indexes,
+                :last_indexed
+            )
+        """), {
+            "track_id": song_info["track_id"],
+            "isrc": isrc,
+            "title": song_info["title"],
+            "artist": song_info["artist"],  
+            "album": song_info.get("album"),
+            "tag_count": len(tags) if tags else 0,
+            "tags_method": method,
+            "audio_features": features_to_vector(audio_features),
+            "weighted_features": weighted_features,
+            "num_indexes": 0,
+            "last_indexed": None
+        })
 
         # On success, mark job as completed
         db.execute(text("""
@@ -83,15 +184,7 @@ def process_next_job(db):
         return True
 
     except Exception as error:
-        db.execute(text("""
-            UPDATE populate_queue
-            SET status = 'failed',
-                last_error = :error,
-                last_attempt_at = NOW(),
-                attempt_count = attempt_count + 1
-            WHERE id = :id
-        """), {"id": job["id"], "error": str(error)})
-
+        _fail_job(db, job["id"], str(error))
         print(f"[worker] Job {job['id']} failed: {error}")
         return True
 

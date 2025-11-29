@@ -7,7 +7,7 @@ import math
 import os
 import subprocess
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 import requests
 import spotipy
 import yt_dlp
@@ -27,9 +27,35 @@ sp = spotipy.Spotify(auth_manager = SpotifyClientCredentials(
 TEMP_DIR = "temp"
 RECCOBEATS_API = "https://api.reccobeats.com/v1/analysis/audio-features"
 
-def search_song(song_name: str, artist_name: str):
+def search_song(song_name: Optional[str] = None, artist_name: Optional[str] = None, track_id: Optional[str] = None) -> Optional[Dict]:
     """Return metadata for the best matching Spotify track."""
-    query = f'track:"{song_name}"'
+
+    # If ISRC is provided, use the dedicated track endpoint
+    if track_id:
+        try:
+            # Remove "spotify:track:" prefix if present
+            track_id = track_id.replace("spotify:track:", "")
+            track = sp.track(track_id)
+            if not track:
+                return {"error": "Track not found"}
+            return{
+                "title": track["name"],
+                "artist": track["artists"][0]["name"],
+                "album": track["album"]["name"],
+                "spotify_url": track["external_urls"]["spotify"],
+                "preview_url": track["preview_url"],
+                "album_art": track["album"]["images"][0]["url"] if track["album"]["images"] else None,
+                "track_id": track["id"],
+                "isrc": track["external_ids"]["isrc"],
+                "yt_url": f"ytsearch1:{track['name']} {track['artists'][0]['name']} official audio"
+            }
+        except SpotifyException as error:
+            return {"error": f"Spotify track lookup failed: {error}"}
+    
+    # Otherwise, use search with song name and/or artist
+    query = ""
+    if song_name:
+        query += f'track:"{song_name}"'
     if artist_name:
         query += f' artist:"{artist_name}"'
 
@@ -223,3 +249,17 @@ def normalize_features(f):
         "loudness": round(f["loudness"], 1),
         "tempo": round(f["tempo"]),
     }
+
+def features_to_vector(features: Dict) -> List[float]:
+    """Convert feature dict to a vector for inserting into the DB."""
+    return [
+        features["acousticness"],
+        features["danceability"],
+        features["energy"],
+        features["valence"],
+        features["instrumentalness"],
+        features["speechiness"],
+        features["liveness"],
+        features["loudness"],
+        features["tempo"],
+    ]

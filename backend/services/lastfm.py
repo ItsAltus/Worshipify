@@ -2,6 +2,12 @@
 lastfm genre/tag retrieving
 '''
 
+import sys
+from pathlib import Path
+
+backend_path = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_path))
+
 import os
 import json
 import re
@@ -49,28 +55,63 @@ def _normalize_genre(name: str):
     """Normalize a genre string for comparison."""
     return _nonword_re.sub("", name.lower().strip())
 
+def _apply_christian_tag_filter(tags: list):
+    """Filter tags to only include Christian-related ones."""
+    christian_keywords = {"christian", "ccm", "worship", "gospel"}
+    filtered = []
+    for tag in tags:
+        name = tag.get("name", "").lower().strip()
+        # Check if any Christian keyword is contained in the tag name
+        if any(keyword in name for keyword in christian_keywords):
+            filtered.append(tag)
+    return filtered
+
 ALLOWED_GENRES = _load_genre_filter()
 
 def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
     """Return a filtered list of tags from Last.fm for a given song."""
     def _call(method, **kwargs):
-        params = {
-            "method": method,
-            "api_key": LASTFM_API_KEY,
-            "format": "json",
-            "autocorrect": 1,
-            **kwargs
-        }
-        results = requests.get(BASE_URL, params = params)
-        results.raise_for_status()
-        tags = results.json().get("toptags", {}).get("tag", [])
-        return tags if isinstance(tags, list) else [tags]
-    
+        if method != "spotify":
+            params = {
+                "method": method,
+                "api_key": LASTFM_API_KEY,
+                "format": "json",
+                "autocorrect": 1,
+                **kwargs
+            }
+            results = requests.get(BASE_URL, params = params)
+            results.raise_for_status()
+            tags = results.json().get("toptags", {}).get("tag", [])
+            return tags if isinstance(tags, list) else [tags]
+        else:
+            # Use Spotify artist genres as tags
+            artist_info = search_song(artist_name=artist_name)
+            if not artist_info:
+                return []
+            track_id = artist_info.get("track_id")
+            if not track_id:
+                return []
+            try:
+                track = sp.track(track_id)
+                if not track or not track.get("artists"):
+                    return []
+                artist_id = track["artists"][0]["id"]
+                artist = sp.artist(artist_id)
+                if not artist:
+                    return []
+                genres = artist.get("genres", [])
+                tags = [{"name": genre, "count": 0, "url": ""} for genre in genres]
+                return tags
+            except SpotifyException:
+                return []
+
     attempts = [
         ("track.gettoptags", {"artist": artist_name, "track": song_name}),
         ("track.getTags", {"artist": artist_name, "track": song_name}),
         ("album.gettoptags", {"artist": artist_name, "album": song_name}),
         ("artist.gettoptags", {"artist": artist_name}),
+        # If all of the above dont work, use spotify artist search for artist genres
+        ("spotify", {"artist_name": artist_name})
     ]
 
     seen = set()
@@ -83,7 +124,7 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
         try:
             raw_tags = _call(method, **kwargs)
 
-            if len(raw_tags) < 5:
+            if len(raw_tags) < 5 and method != "artist.gettoptags":
                 sources.append(f"Method {method} returned {len(raw_tags)} raw tags, therefore not used")
                 continue
 
@@ -113,3 +154,28 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
             continue
 
     return filtered_tags, sources
+
+def is_song_christian(song_id: str):
+    """Determine if a song is Christian based on its Last.fm tags."""
+    song_info = search_song(track_id = song_id)
+    if not song_info:
+        return False, None, None, None, None
+
+    song_name = song_info.get("title")
+    artist_name = song_info.get("artist")
+    if not song_name or not artist_name:
+        return False, None, None, None, None
+
+    tags, methods = get_tags_for_song(song_name, artist_name, limit = 10)
+    if not tags:
+        return False, None, None, None, None
+    
+    christian_tags = _apply_christian_tag_filter(tags)
+    is_christian = len(christian_tags) > 0
+
+    if is_christian:
+        isrc = song_info.get("isrc")
+    else:
+        isrc = None
+
+    return is_christian, tags, methods, isrc, song_info
