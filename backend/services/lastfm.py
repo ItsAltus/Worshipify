@@ -57,7 +57,7 @@ def _normalize_genre(name: str):
 
 def _apply_christian_tag_filter(tags: list):
     """Filter tags to only include Christian-related ones."""
-    christian_keywords = {"christian", "ccm", "worship", "gospel"}
+    christian_keywords = {"christian", "ccm", "worship", "gospel", "chh"}
     filtered = []
     for tag in tags:
         name = tag.get("name", "").lower().strip()
@@ -70,6 +70,28 @@ ALLOWED_GENRES = _load_genre_filter()
 
 def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
     """Return a filtered list of tags from Last.fm for a given song."""
+    def _get_spotify_artist_genres(artist_name: str):
+        # Use Spotify artist genres as tags
+        artist_info = search_song(artist_name = artist_name)
+        if not artist_info:
+            return []
+        track_id = artist_info.get("track_id")
+        if not track_id:
+            return []
+        try:
+            track = sp.track(track_id)
+            if not track or not track.get("artists"):
+                return []
+            artist_id = track["artists"][0]["id"]
+            artist = sp.artist(artist_id)
+            if not artist:
+                return []
+            genres = artist.get("genres", [])
+            tags = [{"name": genre, "count": 0, "url": ""} for genre in genres]
+            return tags
+        except SpotifyException:
+            return []
+
     def _call(method, **kwargs):
         if method != "spotify":
             params = {
@@ -83,35 +105,12 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
             results.raise_for_status()
             tags = results.json().get("toptags", {}).get("tag", [])
             return tags if isinstance(tags, list) else [tags]
-        else:
-            # Use Spotify artist genres as tags
-            artist_info = search_song(artist_name=artist_name)
-            if not artist_info:
-                return []
-            track_id = artist_info.get("track_id")
-            if not track_id:
-                return []
-            try:
-                track = sp.track(track_id)
-                if not track or not track.get("artists"):
-                    return []
-                artist_id = track["artists"][0]["id"]
-                artist = sp.artist(artist_id)
-                if not artist:
-                    return []
-                genres = artist.get("genres", [])
-                tags = [{"name": genre, "count": 0, "url": ""} for genre in genres]
-                return tags
-            except SpotifyException:
-                return []
 
     attempts = [
         ("track.gettoptags", {"artist": artist_name, "track": song_name}),
         ("track.getTags", {"artist": artist_name, "track": song_name}),
         ("album.gettoptags", {"artist": artist_name, "album": song_name}),
         ("artist.gettoptags", {"artist": artist_name}),
-        # If all of the above dont work, use spotify artist search for artist genres
-        ("spotify", {"artist_name": artist_name})
     ]
 
     seen = set()
@@ -119,13 +118,14 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
     raw_tags = []
     DISSALLOWED_TAGS = {"usa", "american", "seen live", "french", "german", artist_name.lower()}
     sources = []
+    method = None
 
     for method, kwargs in attempts:
         try:
             raw_tags = _call(method, **kwargs)
 
-            if len(raw_tags) < 5 and method != "artist.gettoptags":
-                sources.append(f"Method {method} returned {len(raw_tags)} raw tags, therefore not used")
+            if not raw_tags or (len(raw_tags) < 5 and method != "artist.gettoptags"):
+                sources.append(f"Method {method} returned {len(raw_tags) if raw_tags else 0} raw tags, therefore not used")
                 continue
 
             for tag in raw_tags:
@@ -152,6 +152,10 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
 
         except Exception:
             continue
+
+    if method == "artist.gettoptags":
+        spotify_tags = _get_spotify_artist_genres(artist_name)
+        filtered_tags.extend(spotify_tags)
 
     return filtered_tags, sources
 

@@ -615,6 +615,7 @@
 {"url": "?root=liedermacher&scope=all", "name": "liedermacher"}
 {"url": "?root=j-metal&scope=all", "name": "j-metal"}
 {"url": "?root=western%20swing&scope=all", "name": "western swing"}
+{"url": "?root=chh&scope=all", "name": "chh"}
 {"url": "?root=coverchill&scope=all", "name": "coverchill"}
 {"url": "?root=ectofolk&scope=all", "name": "ectofolk"}
 {"url": "?root=indie%20dream%20pop&scope=all", "name": "indie dream pop"}
