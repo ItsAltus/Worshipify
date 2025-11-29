@@ -155,6 +155,8 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
 
     if method == "artist.gettoptags":
         spotify_tags = _get_spotify_artist_genres(artist_name)
+        if len(filtered_tags) == 0:
+            sources.append("No Last.fm tags; used Spotify artist genres")
         filtered_tags.extend(spotify_tags)
 
     return filtered_tags, sources
