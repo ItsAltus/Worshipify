@@ -85,7 +85,23 @@ def validate_spotify_track(spotify_track_id: str) -> bool:
         track = sp.track(spotify_track_id)
         return track is not None
     except SpotifyException:
-        return False    
+        return False
+
+def validate_spotify_album(spotify_album_id: str) -> bool:
+    """Check if a Spotify album ID is valid."""
+    try:
+        album = sp.album(spotify_album_id)
+        return album is not None
+    except SpotifyException:
+        return False
+
+def validate_spotify_playlist(spotify_playlist_id: str) -> bool:
+    """Check if a Spotify playlist ID is valid."""
+    try:
+        playlist = sp.playlist(spotify_playlist_id)
+        return playlist is not None
+    except SpotifyException:
+        return False
 
 def _ffmpeg_trim(src: str, start: int, dur: int, dst: str) -> None:
     """Trim ``dur`` seconds from ``src`` starting at ``start`` using ffmpeg."""
