@@ -10,7 +10,7 @@ sys.path.insert(0, str(backend_path))
 
 import time
 from db_helpers import connect_to_db, test_db_connection
-from services.spotify import validate_spotify_track, validate_spotify_album, validate_spotify_playlist
+from services.spotify import validate_spotify_track, validate_spotify_album, validate_spotify_playlist, sp
 from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -34,15 +34,22 @@ def add_song_to_queue(engine, spotify_track_id: str):
     """
     Adds a song to the population queue.
     """
+    song_name = None
     try:
+        track_info = sp.track(spotify_track_id)
+        if track_info is None:
+            print(f"[manager] Failed to retrieve song info for {spotify_track_id}.\n")
+            return
+        song_name = track_info.get("name")
+
         with engine.begin() as db:
             db.execute(text("""
                 INSERT INTO populate_queue (spotify_track_id, source)
                 VALUES (:spotify_track_id, 'manual_single')
             """), {"spotify_track_id": spotify_track_id})
-        print(f"[manager] Added track {spotify_track_id} to the queue.\n")
+        print(f"[manager] Added track {song_name} ({spotify_track_id}) to the queue.\n")
     except IntegrityError:
-        print(f"[manager] Failed to add track to the queue: Track already exists in the queue.\n")
+        print(f"[manager] Failed to add track to the queue: Track {song_name} ({spotify_track_id}) already exists in the queue")
     except Exception as error:
         print(f"[manager] Failed to add track to the queue: {error}\n")
 
@@ -51,27 +58,32 @@ def add_album_to_queue(engine, spotify_album_id: str):
     Adds all tracks from an album to the population queue.
     """
     try:
-        from services.spotify import sp
-
         album_tracks = sp.album_tracks(spotify_album_id)
         if album_tracks is None:
             print(f"[manager] Failed to retrieve album tracks for {spotify_album_id}.\n")
             return
-        track_ids = [item["id"] for item in album_tracks["items"]]
+        
+        tracks_dict = {}
+        for item in album_tracks["items"]:
+            if item.get("id"):
+                track_id = item["id"]
+                track_name = item["name"]
+                tracks_dict[track_id] = track_name
 
         added_count = 0
         skipped_count = 0
 
-        for track_id in track_ids:
+        for track_id, track_name in tracks_dict.items():
             try:
                 with engine.begin() as db:
                     db.execute(text("""
                         INSERT INTO populate_queue (spotify_track_id, source)
                         VALUES (:spotify_track_id, 'manual_album')
                     """), {"spotify_track_id": track_id})
+                    print(f"[manager] Added: {track_name} ({track_id})")
                     added_count += 1
             except IntegrityError:
-                print(f"[manager] Track {track_id} already exists in the queue, skipping.")
+                print(f"[manager] Track {track_name} ({track_id}) already exists in the queue, skipping.")
                 skipped_count += 1
         
         print(f"[manager] Added album {spotify_album_id} with {added_count} tracks to the queue. Skipped {skipped_count} tracks.\n")
@@ -83,27 +95,32 @@ def add_playlist_to_queue(engine, spotify_playlist_id: str):
     Adds all tracks from a playlist to the population queue.
     """
     try:
-        from services.spotify import sp
-
         playlist_tracks = sp.playlist_items(spotify_playlist_id)
         if playlist_tracks is None:
             print(f"[manager] Failed to retrieve playlist tracks for {spotify_playlist_id}.\n")
             return
-        track_ids = [item["track"]["id"] for item in playlist_tracks["items"] if item["track"]]
+
+        tracks_dict = {}
+        for item in playlist_tracks["items"]:
+            if item.get("track") and item["track"].get("id"):
+                track_id = item["track"]["id"]
+                track_name = item["track"]["name"]
+                tracks_dict[track_id] = track_name
 
         added_count = 0
         skipped_count = 0
 
-        for track_id in track_ids:
+        for track_id, track_name in tracks_dict.items():
             try:
                 with engine.begin() as db:
                     db.execute(text("""
                         INSERT INTO populate_queue (spotify_track_id, source)
                         VALUES (:spotify_track_id, 'manual_playlist')
                     """), {"spotify_track_id": track_id})
+                    print(f"[manager] Added: {track_name} ({track_id})")
                     added_count += 1
             except IntegrityError:
-                print(f"[manager] Track {track_id} already exists in the queue, skipping.")
+                print(f"[manager] Track {track_name} ({track_id}) already exists in the queue, skipping.")
                 skipped_count += 1
         
         print(f"[manager] Added playlist {spotify_playlist_id} with {added_count} tracks to the queue. Skipped {skipped_count} tracks.\n")
