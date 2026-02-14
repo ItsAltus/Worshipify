@@ -3,6 +3,27 @@ import sys
 import re
 from pathlib import Path
 
+IMPORT_NAME_OVERRIDES = {
+    "beautifulsoup4": "bs4",
+    "dnspython": "dns",
+    "python-dateutil": "dateutil",
+    "python-dotenv": "dotenv",
+    "psycopg2-binary": "psycopg2",
+    "scikit-learn": "sklearn",
+    "PyYAML": "yaml",
+    "pillow": "PIL",
+    "Pygments": "pygments",
+    "websocket-client": "websocket",
+    "markdown-it-py": "markdown_it",
+    "MarkupSafe": "markupsafe",
+    "SQLAlchemy": "sqlalchemy",
+    "Jinja2": "jinja2",
+    "Mako": "mako",
+    "pyzmq": "zmq",
+    "fonttools": "fontTools",
+    "PySocks": "socks",
+}
+
 def extract_package_names(requirements_path: Path):
     """
     Extract top-level package names from requirements.txt.
@@ -44,7 +65,8 @@ def main():
 
     for package in packages:
         try:
-            importlib.import_module(package.replace("-", "_"))
+            import_name = IMPORT_NAME_OVERRIDES.get(package) or package
+            importlib.import_module(import_name)
             print(f"✔ Imported {package}")
         except Exception as e:
             print(f"✘ Failed to import {package}: {e}")
