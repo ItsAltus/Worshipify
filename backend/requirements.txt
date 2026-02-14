@@ -4,7 +4,6 @@ anyio==4.8.0
 asttokens==3.0.0
 asyncpg==0.31.0
 attrs==25.3.0
-audioop-lts==0.2.1
 audioread==3.0.1
 beautifulsoup4==4.13.4
 certifi==2025.1.31
@@ -104,9 +103,6 @@ soxr==0.5.0.post1
 spotipy==2.25.1
 SQLAlchemy==2.0.41
 stack-data==0.6.3
-standard-aifc==3.13.0
-standard-chunk==3.13.0
-standard-sunau==3.13.0
 starlette==0.46.0
 stopit==1.1.2
 threadpoolctl==3.6.0
