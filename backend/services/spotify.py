@@ -7,6 +7,8 @@ import math
 import os
 import subprocess
 import logging
+import concurrent.futures
+import time
 from typing import List, Dict, Optional
 import requests
 import spotipy
@@ -158,13 +160,17 @@ def download_audio(youtube_url: str, base_path_no_ext: str) -> List[str]:
         clip_indices = range(num_clips)
 
     out_paths: List[str] = []
-    for idx in clip_indices:
-        start = idx * 30
-        duration = min(30, total_secs - start)
-        mp3 = f"{base_path_no_ext}_clip{idx:02d}.mp3"
-        if not os.path.exists(mp3):
-            _ffmpeg_trim(raw, start, int(duration), mp3)
-        out_paths.append(mp3)
+    trim_tasks = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        for idx in clip_indices:
+            start = idx * 30
+            duration = min(30, total_secs - start)
+            mp3 = f"{base_path_no_ext}_clip{idx:02d}.mp3"
+            if not os.path.exists(mp3):
+                trim_tasks.append(executor.submit(_ffmpeg_trim, raw, start, int(duration), mp3))
+            out_paths.append(mp3)
+
+        concurrent.futures.wait(trim_tasks)
 
     return out_paths
 
@@ -177,10 +183,15 @@ def extract_features(paths: List[str]):
         "loudness","tempo","valence"
     }
 
-    for fp in paths:
+    def _fetch_feature(fp, attempt=1):
         try:
             with open(fp, "rb") as f:
                 r = requests.post(RECCOBEATS_API, files={"audioFile": f}, timeout=30)
+
+            if r.status_code == 429 and attempt <= 3:
+                time.sleep(2 * attempt)
+                return _fetch_feature(fp, attempt + 1)
+
             r.raise_for_status()
             data = r.json()
 
@@ -190,10 +201,17 @@ def extract_features(paths: List[str]):
             if not EXPECTED_KEYS.issubset(data.keys()):
                 raise ValueError(f"Missing keys: got {list(data.keys())}")
 
-            features.append(data)
-
+            return data
         except Exception as e:
             logger.warning(f"Skipping clip {fp!r}: {e}")
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results = executor.map(_fetch_feature, paths)
+
+    for res in results:
+        if res is not None:
+            features.append(res)
 
     if not features:
         raise RuntimeError("All ReccoBeats calls failed; no valid feature data")

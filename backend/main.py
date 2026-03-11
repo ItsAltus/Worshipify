@@ -4,6 +4,7 @@ Contains FastAPI methods and references to external functions
 '''
 
 import os
+import concurrent.futures
 from fastapi import FastAPI
 from typing import Optional, Dict
 from services.spotify import *
@@ -26,13 +27,16 @@ def process_single(song: str, artist: str, idx: int) -> Dict:
         raise ValueError(f"Could not find song: {song} by {artist}")
     base_no_ext = os.path.join(TEMP_DIR, f"{TEMP_BASE_FILENAME}_{idx}")
 
-    paths = download_audio(details["yt_url"], base_no_ext)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        tags_future = executor.submit(get_tags_for_song, details["title"], details["artist"])
 
-    raw_feature_dicts = extract_features(paths)
-    segments = [normalize_features(feats) for feats in raw_feature_dicts]
-    avg = merge_segments(segments)
+        paths = download_audio(details["yt_url"], base_no_ext)
 
-    tags = get_tags_for_song(details["title"], details["artist"])
+        raw_feature_dicts = extract_features(paths)
+        segments = [normalize_features(feats) for feats in raw_feature_dicts]
+        avg = merge_segments(segments)
+
+        tags = tags_future.result()
 
     return {
         "secular_song_info": details,
