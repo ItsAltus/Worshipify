@@ -124,3 +124,5 @@ websockets==15.0.1
 wsproto==1.2.0
 yarg==0.1.10
 yt-dlp==2025.11.12
+librosa
+soundfile

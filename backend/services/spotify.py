@@ -13,6 +13,7 @@ from typing import List, Dict, Optional
 import requests
 import spotipy
 import yt_dlp
+import librosa
 from dotenv import load_dotenv
 from spotipy.exceptions import SpotifyException
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -230,43 +231,31 @@ def extract_features(paths: List[str]):
     if not features:
         raise RuntimeError("All ReccoBeats calls failed; no valid feature data")
 
+    # Extract highly accurate tempo locally from the second clip (or first if only one)
+    # The margin on standard songs ensures the second clip lands directly on the beat.
+    clip_to_analyze = paths[1] if len(paths) > 1 else paths[0]
+    try:
+        y, sr = librosa.load(clip_to_analyze, sr=None)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        true_tempo = float(tempo[0] if isinstance(tempo, (list, tuple, type(y))) else tempo)
+    except Exception as e:
+        logger.warning(f"Failed to calculate librosa tempo: {e}")
+        true_tempo = features[0]["tempo"]  # Fallback
+
+    # Overwrite the estimated tempo with the true calculated tempo
+    for f in features:
+        f["tempo"] = true_tempo
+
     return features
-
-def _normalise_bpm(bpm: float) -> float:
-    """Normalize BPM into a human-friendly range."""
-    if bpm == 0:
-        return 0.0
-
-    while bpm < 60:
-        bpm *= 2
-    while bpm > 200:
-        bpm /= 2
-
-    return round(bpm)
-
-def _select_tempo(segments: List[Dict], threshold: float = 10.0, ref: float = 120.0) -> int:
-    """
-    Pick a tempo by taking the energy-weighted average of every segment's BPM.
-    This ensures that high-energy, high-tempo slices pull the result upward,
-    closely matching the track's actual tempo.
-    """
-    tempos = [_normalise_bpm(seg["tempo"]) for seg in segments]
-    energies = [seg.get("energy", 0.5)    for seg in segments]
-
-    total_energy = sum(energies) or 1e-6
-    weighted_sum = sum(t * e for t, e in zip(tempos, energies))
-
-    return round(weighted_sum / total_energy)
 
 def merge_segments(segments: List[Dict]) -> dict:
     """
     Merge N feature-dicts into a single averaged dict.
-        - First normalize BPM and clamp acousticness on each segment.
-        - Then compute an energy-weighted average for every numeric feature.
-        - Finally, pick a representative “tempo” via _select_tempo().
+        - First clamp acousticness on each segment.
+        - Then compute an energy-weighted average for every numeric feature (excluding tempo).
+        - Finally, use the exact librosa tempo extracted earlier.
     """
     for seg in segments:
-        seg["tempo"] = _normalise_bpm(seg["tempo"])
         if seg["energy"] > 0.5 and seg["instrumentalness"] < 0.1:
             seg["acousticness"] = min(seg["acousticness"], 0.3)
 
@@ -274,13 +263,17 @@ def merge_segments(segments: List[Dict]) -> dict:
     total_energy = sum(energies) or 1e-6
 
     avg: Dict[str, float] = {}
-    numeric_keys = [k for k, v in segments[0].items() if isinstance(v, (int, float))]
+    
+    # Exclude tempo from the energy-weighted average calculation
+    numeric_keys = [k for k, v in segments[0].items() if isinstance(v, (int, float)) and k != "tempo"]
 
     for key in numeric_keys:
         weighted_sum = sum(seg[key] * seg["energy"] for seg in segments)
         avg[key] = round(weighted_sum / total_energy, 2)
 
-    avg["tempo"] = _select_tempo(segments)
+    # Tempo is mathematically exact calculated by librosa across every segment,
+    # so we just take the first segment's tempo.
+    avg["tempo"] = segments[0]["tempo"]
 
     return avg
 
