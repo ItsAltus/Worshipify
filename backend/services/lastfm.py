@@ -165,16 +165,16 @@ def is_song_christian(song_id: str):
     """Determine if a song is Christian based on its Last.fm tags."""
     song_info = search_song(track_id = song_id)
     if not song_info:
-        return False, None, None, None, None
+        is_christian, tags, methods, isrc, song_info = False, None, None, None, None
 
     song_name = song_info.get("title")
     artist_name = song_info.get("artist")
     if not song_name or not artist_name:
-        return False, None, None, None, None
+        is_christian, tags, methods, isrc, song_info = False, None, None, None, None
 
     tags, methods = get_tags_for_song(song_name, artist_name, limit = 10)
     if not tags:
-        return False, None, None, None, None
+        is_christian, tags, methods, isrc, song_info = False, None, None, None, None
     
     christian_tags = _apply_christian_tag_filter(tags)
     is_christian = len(christian_tags) > 0
