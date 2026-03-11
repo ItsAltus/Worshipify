@@ -23,8 +23,9 @@ def home():
 def process_single(song: str, artist: str, idx: int) -> Dict:
     """Process a single song through search, download and tagging pipeline."""
     details = search_song(song, artist)
-    if details is None:
-        raise ValueError(f"Could not find song: {song} by {artist}")
+    if details is None or "error" in details:
+        err_msg = details.get("error", f"Could not find song: {song} by {artist}") if details else f"Could not find song: {song} by {artist}"
+        raise ValueError(err_msg)
     base_no_ext = os.path.join(TEMP_DIR, f"{TEMP_BASE_FILENAME}_{idx}")
 
     with concurrent.futures.ThreadPoolExecutor() as executor:

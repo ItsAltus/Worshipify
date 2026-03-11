@@ -152,19 +152,33 @@ def download_audio(youtube_url: str, base_path_no_ext: str) -> List[str]:
     raw = matches[0]
 
     total_secs = _get_duration(raw)
-    num_clips  = int((total_secs + 29) // 30)
 
-    if num_clips >= 4:
-        clip_indices = range(1, num_clips-1)
+    num_clips = 4
+    clip_duration = 30
+    margin = 15
+
+    if total_secs <= 120:
+        actual_clips = int((total_secs + 29) // 30)
+        start_times = [idx * clip_duration for idx in range(actual_clips)]
     else:
-        clip_indices = range(num_clips)
+        # Space 4 clips evenly between the margin and the end, dropping the very start and end.
+        available_time = total_secs - (2 * margin) - clip_duration
+        if available_time < 0:
+            actual_clips = int((total_secs + 29) // 30)
+            start_times = [idx * clip_duration for idx in range(actual_clips)]
+        else:
+            step = available_time / (num_clips - 1)
+            start_times = [margin + (i * step) for i in range(num_clips)]
 
     out_paths: List[str] = []
     trim_tasks = []
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        for idx in clip_indices:
-            start = idx * 30
-            duration = min(30, total_secs - start)
+        for idx, start_time in enumerate(start_times):
+            start = int(start_time)
+            duration = min(clip_duration, total_secs - start)
+            if duration < 5:  # Skip tiny clips at the end
+                continue
+                
             mp3 = f"{base_path_no_ext}_clip{idx:02d}.mp3"
             if not os.path.exists(mp3):
                 trim_tasks.append(executor.submit(_ffmpeg_trim, raw, start, int(duration), mp3))
