@@ -24,7 +24,7 @@ def command_line_interface():
     Command line interface for the manager.
     """
     print("[manager] Options:")
-    print("   1. Add song to queue")
+    print("   1. Add track/album/playlist to queue")
     print("   2. View queue")
     print("   3. Exit\n")
     choice = input("[manager] Enter your choice: ")
@@ -189,7 +189,7 @@ def main():
         print("")
 
         if choice.lower() in add_song_inputs:
-            spotify_track_id = input("[manager] Enter Spotify Track ID: ")
+            spotify_track_id = input("[manager] Enter Spotify Track/Album/Playlist ID: ")
             print("")
             if validate_spotify_track(spotify_track_id):
                 add_song_to_queue(engine, spotify_track_id)
