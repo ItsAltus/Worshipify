@@ -87,7 +87,7 @@ def get_tags_for_song(song_name: str, artist_name: str, limit: int = 5):
             if not artist:
                 return []
             genres = artist.get("genres", [])
-            tags = [{"name": genre, "count": 0, "url": ""} for genre in genres]
+            tags = [{"name": genre, "count": 100, "url": ""} for genre in genres]
             return tags
         except SpotifyException:
             return []

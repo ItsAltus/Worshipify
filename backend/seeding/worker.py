@@ -165,12 +165,28 @@ def insert_christian_song(db, song_info: dict, job: dict, isrc: str, tags: list,
         "last_indexed": None
     })
 
-    # Insert the tags into the song_tags table
+    # Insert the tags into the normalized tags and song_tags tables
     if tags:
-        tag_rows = [
+        # 1. Ensure all tags exist in the tags table
+        db.execute(text("""
+            INSERT INTO tags (name)
+            VALUES (:name)
+            ON CONFLICT (name) DO NOTHING
+        """), [{"name": tag["name"].strip().lower()} for tag in tags])
+
+        # 2. Get the IDs of those tags
+        tag_names = tuple(tag["name"].strip().lower() for tag in tags)
+        tag_records = db.execute(text("""
+            SELECT id, name FROM tags WHERE name IN :names
+        """), {"names": tag_names}).fetchall()
+        
+        tag_id_map = {row.name: row.id for row in tag_records}
+
+        # 3. Insert into the join table
+        join_rows = [
             {
                 "track_id": song_info["track_id"],
-                "tag": tag["name"].strip().lower(),
+                "tag_id": tag_id_map[tag["name"].strip().lower()],
                 "count": tag["count"],
             }
             for tag in tags
@@ -178,11 +194,11 @@ def insert_christian_song(db, song_info: dict, job: dict, isrc: str, tags: list,
 
         db.execute(
             text("""
-                INSERT INTO song_tags (track_id, tag, count)
-                VALUES (:track_id, :tag, :count)
-                ON CONFLICT (track_id, tag) DO NOTHING
+                INSERT INTO song_tags (track_id, tag_id, count)
+                VALUES (:track_id, :tag_id, :count)
+                ON CONFLICT (track_id, tag_id) DO NOTHING
             """),
-            tag_rows,
+            join_rows,
         )
 
 def process_next_job(db):
