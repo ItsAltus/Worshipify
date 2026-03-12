@@ -14,6 +14,10 @@ backend/__pycache__/
 *.log
 *.cache
 
+# Temp Files
+temp/
+backend/temp/
+
 # IDE & Editor Settings (VS Code, PyCharm, etc.)
 .vscode/
 *.code-workspace
