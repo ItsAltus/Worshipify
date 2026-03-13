@@ -11,14 +11,25 @@ sys.path.insert(0, str(backend_path))
 
 import time
 from db_helpers import connect_to_db, test_db_connection, weight_features
-from services.lastfm import is_song_christian
+from services.lastfm import is_song_christian, get_similar_tracks_by_id
 from services.spotify import features_to_vector
 from main import process_single
 from typing import Optional
 from sqlalchemy import text
-
 TEMP_DIR = "temp"
 TEMP_BASE_FILENAME = "audio"
+
+def cleanup_temp_dir():
+    """Removes all files in the temp directory and then removes the directory itself."""
+    try:
+        if os.path.exists(TEMP_DIR):
+            for fn in os.listdir(TEMP_DIR):
+                file_path = os.path.join(TEMP_DIR, fn)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            os.rmdir(TEMP_DIR)
+    except Exception as e:
+        print(f"[worker] Temp cleanup failed: {e}")
 
 def _fail_job(db, job_id: int, error_message: str):
     """
@@ -45,10 +56,13 @@ def fetch_next_job(db) -> Optional[dict]:
                spotify_track_id,
                source,
                enqueued_at,
-               status
+               status,
+               seed_depth,
+               seed_parent_spotify_id,
+               seed_batch_id
         FROM populate_queue
         WHERE status = 'pending'
-        ORDER BY enqueued_at
+        ORDER BY enqueued_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
     """)).fetchone()
@@ -61,7 +75,10 @@ def fetch_next_job(db) -> Optional[dict]:
         "spotify_track_id": row.spotify_track_id,
         "source": row.source,
         "enqueued_at": row.enqueued_at,
-        "status": row.status
+        "status": row.status,
+        "seed_depth": row.seed_depth if hasattr(row, 'seed_depth') else 0,
+        "seed_parent_spotify_id": row.seed_parent_spotify_id if hasattr(row, 'seed_parent_spotify_id') else None,
+        "seed_batch_id": row.seed_batch_id if hasattr(row, 'seed_batch_id') else None
     }
 
 def check_song_exists(db, isrc: str) -> bool:
@@ -115,12 +132,7 @@ def insert_christian_song(db, song_info: dict, job: dict, isrc: str, tags: list,
     except Exception as err:
         raise ValueError(f"Error processing song audio: {err}")
     finally:
-        try:
-            for fn in os.listdir(TEMP_DIR):
-                os.remove(os.path.join(TEMP_DIR, fn))
-            os.rmdir(TEMP_DIR)
-        except Exception:
-            pass
+        cleanup_temp_dir()
     
     audio_features = song_data["audio_features"]["average"]
     weighted_features = weight_features(audio_features)
@@ -201,6 +213,83 @@ def insert_christian_song(db, song_info: dict, job: dict, isrc: str, tags: list,
             join_rows,
         )
 
+def enqueue_similar_tracks(db, job: dict):
+    """
+    Fetch similar tracks from Spotify and enqueue them safely in the populate_queue.
+    Implements depth-based expansion, filtering, and queue backpressure.
+    """
+    try:
+        # Generate batch ID for debugging
+        import uuid
+        batch_id = str(uuid.uuid4())
+
+        # 1. Uncapped Gating (Fetch up to 5 tracks recursively every time)
+        current_depth = job.get('seed_depth', 0)
+        target_adds = 5
+        fetch_limit = 50
+            
+        # Get recommendations
+        recommended_tracks = get_similar_tracks_by_id(job["spotify_track_id"], limit=fetch_limit)
+        if not recommended_tracks:
+            return
+
+        added = 0
+        skipped_missing_info = 0
+        skipped_in_db = 0
+        skipped_in_queue = 0
+
+        for track in recommended_tracks:
+            if added >= target_adds:
+                break
+                
+            title = track.get("title", "")
+            artist = track.get("artist", "")
+            track_id = track.get("track_id")
+            
+            # Pre-enqueue filtering
+            if not track_id or not title or not artist:
+                skipped_missing_info += 1
+                continue
+
+            # Check if track is already in christian_songs
+            isrc = track.get("isrc")
+            if isrc and check_song_exists(db, isrc):
+                skipped_in_db += 1
+                continue
+                
+            # Check if track is already in populate_queue
+            in_queue = db.execute(text("""
+                SELECT 1 FROM populate_queue WHERE spotify_track_id = :spotify_track_id
+            """), {"spotify_track_id": track_id}).scalar()
+            if in_queue:
+                skipped_in_queue += 1
+                continue
+                
+            # Resolve specific source API
+            source_api = track.get("source_api", "unknown")
+            source_str = f'auto_seeded_{source_api}'
+            
+            # Attempt insertion with ON CONFLICT DO NOTHING to avoid IntegrityErrors poisoning the transaction
+            result = db.execute(text("""
+                INSERT INTO populate_queue (
+                    spotify_track_id, source, seed_depth, seed_parent_spotify_id, seed_batch_id
+                ) VALUES (
+                    :spotify_track_id, :source, :seed_depth, :seed_parent_spotify_id, :seed_batch_id
+                ) ON CONFLICT (spotify_track_id) DO NOTHING
+            """), {
+                "spotify_track_id": track_id,
+                "source": source_str,
+                "seed_depth": current_depth + 1,
+                "seed_parent_spotify_id": job["spotify_track_id"],
+                "seed_batch_id": batch_id
+            })
+            if result.rowcount > 0:
+                added += 1
+
+        print(f"[worker] Auto-seeded {added} similar tracks at depth {current_depth + 1}. Skipped {skipped_in_db} (in DB), {skipped_in_queue} (in queue), {skipped_missing_info} (missing info).")
+    except Exception as error:
+        print(f"[worker] Non-fatal error in enqueue_similar_tracks: {error}")
+
 def process_next_job(db):
     """
     Process the next job in the populate_queue table.
@@ -214,34 +303,44 @@ def process_next_job(db):
     print(f"[worker] Got job {job['id']} for track {job['spotify_track_id']} from source {job['source']}")
 
     try:
-        # Validate and retrieve track info
-        song_info, isrc, tags, method = validate_track_info(db, job)
+        # Use a savepoint so that if an SQL error occurs, it doesn't abort the entire transaction.
+        # This allows us to safely call _fail_job(db) if needed, without encountering InFailedSqlTransaction.
+        with db.begin_nested():
+            # Validate and retrieve track info
+            song_info, isrc, tags, method = validate_track_info(db, job)
 
-        # Mark job as in progress
-        db.execute(text("""
-            UPDATE populate_queue
-            SET status = 'processing',
-                last_error = NULL
-            WHERE id = :id
-        """), {"id": job["id"]})
+            # Mark job as in progress
+            db.execute(text("""
+                UPDATE populate_queue
+                SET status = 'processing',
+                    last_error = NULL
+                WHERE id = :id
+            """), {"id": job["id"]})
 
-        print(f"[worker] Processing track {job['spotify_track_id']}...")
+            print(f"[worker] Processing track {job['spotify_track_id']}...")
 
-        # Insert the Christian song into the christian_songs table
-        insert_christian_song(db, song_info, job, isrc, tags, method)
+            # Insert the Christian song into the christian_songs table
+            insert_christian_song(db, song_info, job, isrc, tags, method)
 
-        # Mark as completed
-        db.execute(text("""
-            UPDATE populate_queue
-            SET status = 'done'
-            WHERE id = :id
-        """), {"id": job["id"]})
+            # Enqueue similar tracks based on recommendation API (Recursive Seeding)
+            enqueue_similar_tracks(db, job)
+
+            # Mark as completed
+            db.execute(text("""
+                UPDATE populate_queue
+                SET status = 'done'
+                WHERE id = :id
+            """), {"id": job["id"]})
 
         print(f"[worker] Job {job['id']} completed successfully.")
         return True
 
     except Exception as error:
-        _fail_job(db, job["id"], str(error))
+        try:
+            _fail_job(db, job["id"], str(error))
+        except Exception as fail_error:
+            print(f"[worker] Could not mark job as failed (connection may be dead): {fail_error}")
+            
         print(f"[worker] Job {job['id']} failed: {error}")
         return True
 
@@ -259,16 +358,22 @@ def main():
 
     try:
         while True:
-            with engine.begin() as db:
-                has_job = process_next_job(db)
+            try:
+                with engine.begin() as db:
+                    has_job = process_next_job(db)
 
-            if not has_job:
-                print("[worker] No jobs found, sleeping for 3 seconds...")
-                time.sleep(3)
+                if not has_job:
+                    print("[worker] No jobs found, sleeping for 3 seconds...")
+                    time.sleep(3)
+            except Exception as e:
+                print(f"[worker] Database transaction error (connection drop?): {e}")
+                print("[worker] Reconnecting in 5 seconds...")
+                time.sleep(5)
 
     except KeyboardInterrupt:
         print("\n[worker] Interrupted by user. Worker shutting down. Database rolled back.")
-        time.sleep(3)
+        cleanup_temp_dir()
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()

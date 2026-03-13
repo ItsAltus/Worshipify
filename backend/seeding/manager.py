@@ -44,8 +44,8 @@ def add_song_to_queue(engine, spotify_track_id: str):
 
         with engine.begin() as db:
             db.execute(text("""
-                INSERT INTO populate_queue (spotify_track_id, source)
-                VALUES (:spotify_track_id, 'manual_single')
+                INSERT INTO populate_queue (spotify_track_id, source, seed_depth)
+                VALUES (:spotify_track_id, 'manual_single', 0)
             """), {"spotify_track_id": spotify_track_id})
         print(f"[manager] Added track {song_name} ({spotify_track_id}) to the queue.\n")
     except IntegrityError:
@@ -77,8 +77,8 @@ def add_album_to_queue(engine, spotify_album_id: str):
             try:
                 with engine.begin() as db:
                     db.execute(text("""
-                        INSERT INTO populate_queue (spotify_track_id, source)
-                        VALUES (:spotify_track_id, 'manual_album')
+                        INSERT INTO populate_queue (spotify_track_id, source, seed_depth)
+                        VALUES (:spotify_track_id, 'manual_album', 0)
                     """), {"spotify_track_id": track_id})
                     print(f"[manager] Added: {track_name} ({track_id})")
                     added_count += 1
@@ -114,8 +114,8 @@ def add_playlist_to_queue(engine, spotify_playlist_id: str):
             try:
                 with engine.begin() as db:
                     db.execute(text("""
-                        INSERT INTO populate_queue (spotify_track_id, source)
-                        VALUES (:spotify_track_id, 'manual_playlist')
+                        INSERT INTO populate_queue (spotify_track_id, source, seed_depth)
+                        VALUES (:spotify_track_id, 'manual_playlist', 0)
                     """), {"spotify_track_id": track_id})
                     print(f"[manager] Added: {track_name} ({track_id})")
                     added_count += 1

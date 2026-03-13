@@ -185,3 +185,118 @@ def is_song_christian(song_id: str):
         isrc = None
 
     return is_christian, tags, methods, isrc, song_info
+
+def get_similar_tracks_by_id(track_id: str, limit: int = 5):
+    """
+    Fetch similar tracks using Last.fm native API first.
+    If less than 2 valid tracks are returned, supplement with Spotify's Related Artists feature.
+    """
+    try:
+        track_id = track_id.replace("spotify:track:", "")
+        track = sp.track(track_id)
+        if not track:
+            return []
+            
+        song_name = track["name"]
+        artist_name = track["artists"][0]["name"]
+        artist_id = track["artists"][0]["id"]
+        
+        final_tracks = []
+        seen_isrcs = set()
+        
+        # 1. LastFM track.getSimilar
+        import random
+        params = {
+            "method": "track.getsimilar",
+            "api_key": LASTFM_API_KEY,
+            "format": "json",
+            "autocorrect": 1,
+            "artist": artist_name,
+            "track": song_name,
+            "limit": limit * 3
+        }
+        try:
+            res = requests.get(BASE_URL, params=params, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                similartracks = data.get("similartracks", {}).get("track", [])
+                if isinstance(similartracks, dict):
+                    similartracks = [similartracks]
+                    
+                for t in similartracks:
+                    if len(final_tracks) >= limit: break
+                    match_title = t.get("name")
+                    match_artist = t.get("artist", {}).get("name")
+                    if match_title and match_artist:
+                        spotify_data = search_song(song_name=match_title, artist_name=match_artist)
+                        if spotify_data and "error" not in spotify_data:
+                            t_id = spotify_data.get("track_id")
+                            isrc = spotify_data.get("isrc")
+                            if t_id and isrc and isrc not in seen_isrcs:
+                                seen_isrcs.add(isrc)
+                                final_tracks.append({
+                                    "title": match_title,
+                                    "artist": match_artist,
+                                    "track_id": t_id,
+                                    "isrc": isrc,
+                                    "source_api": "lastfm"
+                                })
+        except Exception as e:
+            print(f"[lastfm] Failed to fetch similar tracks: {e}")
+            
+        # 2. LastFM Artist Similarity Fallback
+        if len(final_tracks) < 2 and artist_id:
+            try:
+                params_artist = {
+                    "method": "artist.getsimilar",
+                    "api_key": LASTFM_API_KEY,
+                    "format": "json",
+                    "artist": artist_name,
+                    "limit": 5
+                }
+                res_artist = requests.get(BASE_URL, params=params_artist, timeout=10)
+                if res_artist.status_code == 200:
+                    data_artist = res_artist.json()
+                    similar_artists = data_artist.get("similarartists", {}).get("artist", [])
+                    if isinstance(similar_artists, dict):
+                        similar_artists = [similar_artists]
+                    
+                    random.shuffle(similar_artists)
+                    for s_artist_obj in similar_artists:
+                        if len(final_tracks) >= limit: break
+                        s_name = s_artist_obj.get("name")
+                        if not s_name: continue
+                        
+                        # Resolve Spotify Artist
+                        s_data = search_song(artist_name=s_name)
+                        s_results = sp.search(q=f'artist:"{s_name}"', type="artist", limit=1)
+                        if s_results and s_results.get("artists") and s_results["artists"].get("items"):
+                            r_artist_id = s_results["artists"]["items"][0]["id"]
+                            # Fetch top tracks
+                            top_tracks = sp.artist_top_tracks(r_artist_id)
+                            if top_tracks and "tracks" in top_tracks:
+                                t_tracks = top_tracks["tracks"]
+                                random.shuffle(t_tracks)
+                                for t in t_tracks:
+                                    if len(final_tracks) >= limit: break
+                                    t_id = t.get("id")
+                                    t_isrc = t.get("external_ids", {}).get("isrc")
+                                    t_title = t.get("name")
+                                    t_a_name = t["artists"][0]["name"] if t.get("artists") else None
+                                    
+                                    if t_id and t_isrc and t_isrc not in seen_isrcs:
+                                        seen_isrcs.add(t_isrc)
+                                        final_tracks.append({
+                                            "title": t_title,
+                                            "artist": t_a_name,
+                                            "track_id": t_id,
+                                            "isrc": t_isrc,
+                                            "source_api": "spotify_fallback"
+                                        })
+            except Exception as e:
+                print(f"[fallback] Failed fetching similar artists via lastfm: {e}")
+                
+        return final_tracks
+    except Exception as e:
+        print(f"[recommendation] Error resolving seed track {track_id}: {e}")
+        return []
